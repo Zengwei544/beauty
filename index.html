@@ -360,20 +360,6 @@ textarea.fc{resize:vertical;min-height:58px}
         <button class="btn btn-primary btn-sm" onclick="saveShopSettings()">儲存</button>
       </div>
       <div class="settings-sec">
-        <h3>🟢 LINE Login（LIFF）</h3>
-        <div class="notice notice-info">前往 LINE Developers → Provider → LINE Login Channel → 新增 LIFF App → 複製 LIFF ID 填入下方。</div>
-        <div class="fg"><label class="fl">LIFF ID</label><input class="fc" id="sLiffId" placeholder="1234567890-xxxxxxxxx"></div>
-        <div style="display:flex;gap:7px;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" onclick="saveLiff()">儲存並重新登入</button>
-        </div>
-      </div>
-      <div class="settings-sec">
-        <h3>💬 LINE 推播通知</h3>
-        <div class="fg"><label class="fl">Channel Access Token</label><textarea class="fc" id="sLineToken" style="min-height:44px" placeholder="LINE Messaging API Access Token"></textarea></div>
-        <div class="fg"><label class="fl">推播目標 User ID</label><input class="fc" id="sLineTarget" placeholder="Uxxxxxxxxx"></div>
-        <button class="btn btn-primary btn-sm" onclick="saveLineSettings()">儲存</button>
-      </div>
-      <div class="settings-sec">
         <h3>💾 資料管理</h3>
         <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px">
           <button class="btn btn-outline" onclick="exportCSV()">📥 匯出 CSV</button>
