@@ -1,0 +1,109 @@
+"""Configuration loaded from environment variables / a local .env file."""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+
+def load_dotenv(path: str | Path = ".env") -> None:
+    """Minimal .env loader (no external dependency). Existing env vars win."""
+    p = Path(path)
+    if not p.exists():
+        return
+    for raw in p.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+def _bool(name: str, default: bool) -> bool:
+    v = os.getenv(name)
+    if v is None or v == "":
+        return default
+    return v.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _float(name: str, default: float) -> float:
+    v = os.getenv(name)
+    return float(v) if v not in (None, "") else default
+
+
+def _int(name: str, default: int) -> int:
+    v = os.getenv(name)
+    return int(v) if v not in (None, "") else default
+
+
+@dataclass
+class Config:
+    api_key: str = ""
+    api_secret: str = ""
+    use_testnet: bool = True
+    dry_run: bool = True
+
+    symbol: str = "BTCUSDT"
+    interval: str = "15m"
+    leverage: int = 5
+    margin_type: str = "ISOLATED"
+
+    ema_fast: int = 20
+    ema_slow: int = 50
+    rsi_period: int = 14
+    atr_period: int = 14
+    sl_atr_mult: float = 1.5
+    tp_atr_mult: float = 3.0
+
+    risk_per_trade_pct: float = 1.0
+    max_position_fraction: float = 0.5
+    max_daily_loss_pct: float = 5.0
+    paper_balance: float = 1000.0
+
+    @property
+    def base_url(self) -> str:
+        return (
+            "https://testnet.binancefuture.com"
+            if self.use_testnet
+            else "https://fapi.binance.com"
+        )
+
+    @classmethod
+    def from_env(cls, dotenv_path: str | Path = ".env") -> "Config":
+        load_dotenv(dotenv_path)
+        cfg = cls(
+            api_key=os.getenv("BINANCE_API_KEY", ""),
+            api_secret=os.getenv("BINANCE_API_SECRET", ""),
+            use_testnet=_bool("USE_TESTNET", True),
+            dry_run=_bool("DRY_RUN", True),
+            symbol=os.getenv("SYMBOL", "BTCUSDT").upper(),
+            interval=os.getenv("INTERVAL", "15m"),
+            leverage=_int("LEVERAGE", 5),
+            margin_type=os.getenv("MARGIN_TYPE", "ISOLATED").upper(),
+            ema_fast=_int("EMA_FAST", 20),
+            ema_slow=_int("EMA_SLOW", 50),
+            rsi_period=_int("RSI_PERIOD", 14),
+            atr_period=_int("ATR_PERIOD", 14),
+            sl_atr_mult=_float("SL_ATR_MULT", 1.5),
+            tp_atr_mult=_float("TP_ATR_MULT", 3.0),
+            risk_per_trade_pct=_float("RISK_PER_TRADE_PCT", 1.0),
+            max_position_fraction=_float("MAX_POSITION_FRACTION", 0.5),
+            max_daily_loss_pct=_float("MAX_DAILY_LOSS_PCT", 5.0),
+            paper_balance=_float("PAPER_BALANCE", 1000.0),
+        )
+        cfg.validate()
+        return cfg
+
+    def validate(self) -> None:
+        if self.ema_fast >= self.ema_slow:
+            raise ValueError("EMA_FAST must be smaller than EMA_SLOW")
+        if not 1 <= self.leverage <= 125:
+            raise ValueError("LEVERAGE must be between 1 and 125")
+        if self.margin_type not in ("ISOLATED", "CROSSED"):
+            raise ValueError("MARGIN_TYPE must be ISOLATED or CROSSED")
+        if not 0 < self.risk_per_trade_pct <= 10:
+            raise ValueError("RISK_PER_TRADE_PCT must be in (0, 10]")
+        if self.sl_atr_mult <= 0 or self.tp_atr_mult <= 0:
+            raise ValueError("SL/TP ATR multipliers must be positive")
+        if not self.dry_run and (not self.api_key or not self.api_secret):
+            raise ValueError("BINANCE_API_KEY / BINANCE_API_SECRET required when DRY_RUN=false")
