@@ -74,12 +74,12 @@ class MacdRsiStrategy:
             return None
 
         price = closes[-1]
-        info = f"MACD={line[-1]:.4f} signal={sig[-1]:.4f} RSI={r:.1f}"
+        info = f"MACD={line[-1]:.4f} 訊號線={sig[-1]:.4f} RSI={r:.1f}"
         # histogram changing sign == MACD line crossing its signal line
         if h0 <= 0 < h1 and cfg.rsi_long_min < r < cfg.rsi_long_max:
-            return _make_signal(cfg, "LONG", price, a, "MACD crossed above signal, " + info)
+            return _make_signal(cfg, "LONG", price, a, "MACD 金叉（快線上穿訊號線），" + info)
         if h0 >= 0 > h1 and cfg.rsi_short_min < r < cfg.rsi_short_max:
-            return _make_signal(cfg, "SHORT", price, a, "MACD crossed below signal, " + info)
+            return _make_signal(cfg, "SHORT", price, a, "MACD 死叉（快線下穿訊號線），" + info)
         return None
 
 
@@ -115,10 +115,10 @@ class EmaCrossStrategy:
 
         if crossed_up and r1 > 50:
             return _make_signal(self.cfg, "LONG", price, a1,
-                                f"EMA{self.cfg.ema_fast} crossed above EMA{self.cfg.ema_slow}, RSI={r1:.1f}")
+                                f"EMA{self.cfg.ema_fast} 上穿 EMA{self.cfg.ema_slow}，RSI={r1:.1f}")
         if crossed_down and r1 < 50:
             return _make_signal(self.cfg, "SHORT", price, a1,
-                                f"EMA{self.cfg.ema_fast} crossed below EMA{self.cfg.ema_slow}, RSI={r1:.1f}")
+                                f"EMA{self.cfg.ema_fast} 下穿 EMA{self.cfg.ema_slow}，RSI={r1:.1f}")
         return None
 
 

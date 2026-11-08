@@ -10,6 +10,8 @@ from urllib.parse import urlencode
 
 import requests
 
+from .text import binance_error
+
 log = logging.getLogger(__name__)
 
 # Binance moved conditional orders (STOP_MARKET / TAKE_PROFIT_MARKET ...) to the
@@ -20,7 +22,7 @@ ERR_NO_NEED_TO_CHANGE_MARGIN = -4046
 
 class BinanceAPIError(Exception):
     def __init__(self, status: int, code: int, msg: str):
-        super().__init__(f"HTTP {status} code={code} msg={msg}")
+        super().__init__(f"HTTP {status}，{binance_error(code, msg)}")
         self.status, self.code, self.msg = status, code, msg
 
 
@@ -57,7 +59,8 @@ class BinanceFuturesClient:
             except requests.RequestException as e:
                 if attempt == retries:
                     raise
-                log.warning("Network error %s %s: %s (retry %d)", method, path, e, attempt)
+                log.warning("網路錯誤 %s %s（%s），第 %d 次重試", method, path, type(e).__name__, attempt)
+                log.debug("網路錯誤詳情：%s", e)
                 time.sleep(2 ** attempt)
                 continue
 
@@ -78,16 +81,16 @@ class BinanceFuturesClient:
             if resp.status_code in (429, 418) or resp.status_code >= 500:
                 if attempt < retries:
                     wait = int(resp.headers.get("Retry-After", 2 ** attempt))
-                    log.warning("HTTP %s on %s, sleeping %ss", resp.status_code, path, wait)
+                    log.warning("%s 回應 HTTP %s，等待 %s 秒後重試", path, resp.status_code, wait)
                     time.sleep(wait)
                     continue
             raise BinanceAPIError(resp.status_code, code, msg)
-        raise RuntimeError("unreachable")
+        raise RuntimeError("不應執行到這裡")
 
     def sync_time(self) -> None:
         server = self._request("GET", "/fapi/v1/time")["serverTime"]
         self._time_offset = int(server) - int(time.time() * 1000)
-        log.debug("Time offset vs server: %d ms", self._time_offset)
+        log.debug("與伺服器時間差：%d 毫秒", self._time_offset)
 
     # --------------------------------------------------------------- market
     def exchange_info(self) -> dict:
@@ -97,7 +100,7 @@ class BinanceFuturesClient:
         for s in self.exchange_info()["symbols"]:
             if s["symbol"] == symbol:
                 return s
-        raise ValueError(f"Symbol {symbol} not found on exchange")
+        raise ValueError(f"交易所找不到交易對 {symbol}")
 
     def klines(self, symbol: str, interval: str, limit: int = 500,
                start_time: Optional[int] = None, end_time: Optional[int] = None) -> List[list]:
@@ -168,4 +171,4 @@ class BinanceFuturesClient:
             try:
                 self._request("DELETE", path, {"symbol": symbol}, signed=True)
             except BinanceAPIError as e:
-                log.debug("cancel via %s ignored: %s", path, e)
+                log.debug("透過 %s 取消訂單時的錯誤已忽略：%s", path, e)

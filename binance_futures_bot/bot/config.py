@@ -112,21 +112,21 @@ class Config:
 
     def validate(self) -> None:
         if self.strategy not in ("macd_rsi", "ema_cross"):
-            raise ValueError("STRATEGY must be macd_rsi or ema_cross")
+            raise ValueError("STRATEGY 只能是 macd_rsi 或 ema_cross")
         if self.macd_fast >= self.macd_slow or self.macd_signal <= 0:
-            raise ValueError("MACD_FAST must be smaller than MACD_SLOW, MACD_SIGNAL > 0")
+            raise ValueError("MACD_FAST 必須小於 MACD_SLOW，且 MACD_SIGNAL 必須大於 0")
         if not (0 <= self.rsi_long_min < self.rsi_long_max <= 100
                 and 0 <= self.rsi_short_min < self.rsi_short_max <= 100):
-            raise ValueError("RSI_*_MIN must be < RSI_*_MAX, both within 0-100")
+            raise ValueError("RSI_*_MIN 必須小於 RSI_*_MAX，且都在 0 到 100 之間")
         if self.ema_fast >= self.ema_slow:
-            raise ValueError("EMA_FAST must be smaller than EMA_SLOW")
+            raise ValueError("EMA_FAST 必須小於 EMA_SLOW")
         if not 1 <= self.leverage <= 125:
-            raise ValueError("LEVERAGE must be between 1 and 125")
+            raise ValueError("LEVERAGE 槓桿必須在 1 到 125 之間")
         if self.margin_type not in ("ISOLATED", "CROSSED"):
-            raise ValueError("MARGIN_TYPE must be ISOLATED or CROSSED")
+            raise ValueError("MARGIN_TYPE 只能是 ISOLATED（逐倉）或 CROSSED（全倉）")
         if not 0 < self.risk_per_trade_pct <= 10:
-            raise ValueError("RISK_PER_TRADE_PCT must be in (0, 10]")
+            raise ValueError("RISK_PER_TRADE_PCT 必須大於 0 且不超過 10")
         if self.sl_atr_mult <= 0 or self.tp_atr_mult <= 0:
-            raise ValueError("SL/TP ATR multipliers must be positive")
+            raise ValueError("SL_ATR_MULT / TP_ATR_MULT 必須大於 0")
         if not self.dry_run and (not self.api_key or not self.api_secret):
-            raise ValueError("BINANCE_API_KEY / BINANCE_API_SECRET required when DRY_RUN=false")
+            raise ValueError("DRY_RUN=false 時必須在 .env 填入 BINANCE_API_KEY 和 BINANCE_API_SECRET")

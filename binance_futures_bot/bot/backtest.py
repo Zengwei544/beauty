@@ -38,15 +38,15 @@ class BacktestResult:
 
     def summary(self) -> str:
         return "\n".join([
-            "=" * 44,
-            f" 起始資金 Start balance : {self.start_balance:,.2f} USDT",
-            f" 最終資金 End balance   : {self.end_balance:,.2f} USDT",
-            f" 報酬率   Return        : {self.return_pct:+.2f}%",
-            f" 交易次數 Trades        : {len(self.trades)}",
-            f" 勝率     Win rate      : {self.win_rate:.1f}%",
-            f" 獲利因子 Profit factor : {self.profit_factor:.2f}",
-            f" 最大回撤 Max drawdown  : {self.max_drawdown_pct:.2f}%",
-            "=" * 44,
+            "=" * 32,
+            f" 起始資金：{self.start_balance:,.2f} USDT",
+            f" 最終資金：{self.end_balance:,.2f} USDT",
+            f" 報酬率　：{self.return_pct:+.2f}%",
+            f" 交易次數：{len(self.trades)}",
+            f" 勝率　　：{self.win_rate:.1f}%",
+            f" 獲利因子：{self.profit_factor:.2f}",
+            f" 最大回撤：{self.max_drawdown_pct:.2f}%",
+            "=" * 32,
         ])
 
 

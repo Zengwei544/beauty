@@ -10,6 +10,7 @@ from .client import BinanceFuturesClient
 from .config import Config
 from .risk import DailyLossGuard, SymbolFilters, position_size
 from .strategy import Candle, make_strategy
+from .text import side as zh_side
 
 log = logging.getLogger(__name__)
 
@@ -34,28 +35,32 @@ class Trader:
     # ----------------------------------------------------------------- setup
     def setup(self) -> None:
         cfg = self.cfg
-        mode = "TESTNET" if cfg.use_testnet else "MAINNET (REAL MONEY)"
-        log.info("Starting bot: %s %s | strategy=%s | %s | %s | leverage=%dx %s",
-                 cfg.symbol, cfg.interval, cfg.strategy, mode, "DRY_RUN" if cfg.dry_run else "LIVE ORDERS",
-                 cfg.leverage, cfg.margin_type)
+        mode = "測試網" if cfg.use_testnet else "正式網（真實資金）"
+        strat = {"macd_rsi": "MACD + RSI", "ema_cross": "EMA 交叉"}[cfg.strategy]
+        margin = "逐倉" if cfg.margin_type == "ISOLATED" else "全倉"
+        log.info("啟動機器人：%s %s ｜策略=%s ｜%s ｜%s ｜槓桿 %d 倍 %s",
+                 cfg.symbol, cfg.interval, strat, mode, "紙上交易（不下單）" if cfg.dry_run else "真實下單",
+                 cfg.leverage, margin)
         self.client.sync_time()
         self.filters = SymbolFilters.from_exchange_info(self.client.symbol_info(cfg.symbol))
-        log.info("Filters: %s", self.filters)
+        f = self.filters
+        log.info("交易規則：數量步長=%s 最小數量=%s 價格精度=%s 最小名目價值=%s",
+                 f.step_size, f.min_qty, f.tick_size, f.min_notional)
 
         if cfg.dry_run:
             self.broker = PaperBroker(cfg.paper_balance, self.filters)
             return
 
         if self.client.is_hedge_mode():
-            raise RuntimeError("Account is in Hedge Mode. Switch to One-way Mode in Binance "
-                               "Futures settings (Preferences -> Position Mode).")
+            raise RuntimeError("帳戶目前是「雙向持倉」模式，請到幣安合約「偏好設定 → 持倉模式」"
+                               "改成「單向持倉」後再啟動。")
         self.client.set_margin_type(cfg.symbol, cfg.margin_type)
         self.client.set_leverage(cfg.symbol, cfg.leverage)
         self.broker = LiveBroker(self.client, cfg.symbol, self.filters)
         pos = self.broker.get_position()
         if pos:
-            log.warning("Existing position detected: %s. The bot will manage it on the next signal; "
-                        "make sure it has a stop loss.", pos)
+            log.warning("偵測到既有持倉：%s %s @ %s。機器人會在下個訊號時接手，請確認它已有止損單。",
+                        zh_side(pos.side), pos.qty, pos.entry)
 
     # ------------------------------------------------------------------ loop
     def closed_candles(self) -> List[Candle]:
@@ -71,7 +76,7 @@ class Trader:
         if self.last_candle_time is None:
             # Don't act on a candle that closed before the bot started.
             self.last_candle_time = last.open_time
-            log.info("Synced to candle %d; waiting for the next close...", last.open_time)
+            log.info("已同步最新 K 線，等待下一根 K 線收盤…")
             return
         if last.open_time <= self.last_candle_time:
             return
@@ -86,40 +91,41 @@ class Trader:
         balance = broker.get_balance()
         self.guard.update(balance)
         pos = broker.get_position()
-        log.info("Candle close=%.4f | balance=%.2f | position=%s",
-                 last.close, balance, f"{pos.side} {pos.qty} @ {pos.entry}" if pos else "none")
+        log.info("K 線收盤價=%.4f ｜餘額=%.2f ｜持倉=%s",
+                 last.close, balance, f"{zh_side(pos.side)} {pos.qty} @ {pos.entry}" if pos else "無")
 
         signal = self.strategy.evaluate(candles)
         if not signal:
             return
-        log.info("Signal %s: %s", signal.side, signal.reason)
+        log.info("訊號 %s：%s", zh_side(signal.side), signal.reason)
 
         if pos and pos.side == signal.side:
-            log.info("Already %s, ignoring signal", pos.side)
+            log.info("已經是%s持倉，忽略此訊號", zh_side(pos.side))
             return
         if pos:
             broker.close(last.close, "reverse_signal", last.close_time)
             balance = broker.get_balance()
 
         if not self.guard.can_trade(balance):
-            log.warning("Daily loss limit (%.1f%%) reached - no new entries today", cfg.max_daily_loss_pct)
+            log.warning("已達單日虧損上限（%.1f%%），今天不再開新倉", cfg.max_daily_loss_pct)
             return
 
         qty = position_size(balance, signal.entry, signal.stop_loss, cfg.risk_per_trade_pct,
                             cfg.leverage, cfg.max_position_fraction, self.filters)
         if qty <= 0:
-            log.warning("Position size below exchange minimum, skipping (balance=%.2f)", balance)
+            log.warning("計算出的倉位低於交易所最小下單量，略過（餘額=%.2f）", balance)
             return
         broker.open(signal, qty, last.close, last.close_time)
 
     def run(self, poll_seconds: int = 10) -> None:
         self.setup()
-        log.info("Running. Press Ctrl+C to stop.")
+        log.info("運行中，按 Ctrl+C 停止。")
         while True:
             try:
                 self.step()
             except KeyboardInterrupt:
                 raise
-            except Exception:
-                log.exception("Error in trading loop (will retry)")
+            except Exception as e:
+                log.error("交易迴圈發生錯誤（稍後重試）：%s", e)
+                log.debug("詳細錯誤", exc_info=True)
             time.sleep(poll_seconds)

@@ -9,6 +9,7 @@ from typing import List, Optional
 from .client import BinanceFuturesClient
 from .risk import SymbolFilters
 from .strategy import Candle, Signal
+from .text import reason as zh_reason, side as zh_side
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class PaperBroker:
         self.position = Position(signal.side, q, price,
                                  signal.stop_loss + shift, signal.take_profit + shift)
         self._entry_time = ts
-        log.info("[PAPER] OPEN %s qty=%s @ %.4f SL=%.4f TP=%.4f", signal.side, qty, price,
+        log.info("【模擬】開倉 %s 數量=%s 價格=%.4f 止損=%.4f 止盈=%.4f", zh_side(signal.side), qty, price,
                  self.position.stop_loss, self.position.take_profit)
 
     def close(self, price: float, reason: str, ts: int = 0) -> Optional[Trade]:
@@ -77,8 +78,8 @@ class PaperBroker:
                       reason, self._entry_time, ts)
         self.trades.append(trade)
         self.position = None
-        log.info("[PAPER] CLOSE %s @ %.4f (%s) pnl=%.2f balance=%.2f",
-                 p.side, price, reason, trade.pnl, self.balance)
+        log.info("【模擬】平倉 %s 價格=%.4f（%s）損益=%.2f 餘額=%.2f",
+                 zh_side(p.side), price, zh_reason(reason), trade.pnl, self.balance)
         return trade
 
     def on_candle(self, c: Candle) -> Optional[Trade]:
@@ -125,7 +126,8 @@ class LiveBroker:
         self.client.cancel_all(self.symbol)
         order = self.client.market_order(self.symbol, side, str(qty))
         fill = float(order.get("avgPrice") or price)
-        log.info("[LIVE] OPEN %s qty=%s avg=%.4f orderId=%s", signal.side, qty, fill, order.get("orderId"))
+        log.info("【實盤】開倉 %s 數量=%s 成交均價=%.4f 訂單編號=%s",
+                 zh_side(signal.side), qty, fill, order.get("orderId"))
 
         # Re-anchor SL/TP to the real fill price, keeping the same distances.
         sl = fill - (signal.entry - signal.stop_loss)
@@ -134,9 +136,10 @@ class LiveBroker:
         try:
             self.client.close_position_stop(self.symbol, exit_side, "STOP_MARKET", sl_s)
             self.client.close_position_stop(self.symbol, exit_side, "TAKE_PROFIT_MARKET", tp_s)
-            log.info("[LIVE] Protective orders placed SL=%s TP=%s", sl_s, tp_s)
-        except Exception:
-            log.exception("Failed to place SL/TP -> closing position for safety")
+            log.info("【實盤】已掛止損單=%s 止盈單=%s", sl_s, tp_s)
+        except Exception as e:
+            log.error("止損/止盈單掛單失敗：%s → 為了安全立即平倉", e)
+            log.debug("詳細錯誤", exc_info=True)
             self.close(price, "protection_failed")
             raise
 
@@ -148,7 +151,8 @@ class LiveBroker:
         side = "SELL" if pos.side == "LONG" else "BUY"
         qty = self.filters.round_qty(pos.qty)
         order = self.client.market_order(self.symbol, side, str(qty), reduce_only=True)
-        log.info("[LIVE] CLOSE %s qty=%s (%s) orderId=%s", pos.side, qty, reason, order.get("orderId"))
+        log.info("【實盤】平倉 %s 數量=%s（%s）訂單編號=%s",
+                 zh_side(pos.side), qty, zh_reason(reason), order.get("orderId"))
 
     def on_candle(self, c: Candle) -> None:
         # SL/TP live on the exchange; nothing to simulate.

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""幣安 USDT-M 合約自動交易系統 / Binance USDT-M Futures auto-trading bot.
+"""幣安 U 本位合約自動交易系統。
 
-Usage:
-    python main.py run                          # start trading (respects DRY_RUN / USE_TESTNET)
-    python main.py backtest --days 60           # backtest on real history (public API)
-    python main.py backtest --csv data.csv      # backtest on a CSV of klines
-    python main.py backtest --synthetic         # offline backtest on generated data
-    python main.py status                       # show balance and position
-    python main.py close                        # emergency: cancel orders + close position
+用法：
+    python main.py run                          # 開始交易（依 DRY_RUN / USE_TESTNET 設定）
+    python main.py backtest --days 60           # 用真實歷史行情回測
+    python main.py backtest --csv data.csv      # 用 CSV 的 K 線回測
+    python main.py backtest --synthetic         # 用模擬資料離線回測
+    python main.py status                       # 查看餘額與持倉
+    python main.py close                        # 緊急：取消掛單並平倉
 """
 from __future__ import annotations
 
@@ -20,14 +20,17 @@ from bot.backtest import fetch_history, load_csv, run_backtest, synthetic_candle
 from bot.client import BinanceFuturesClient
 from bot.config import Config
 from bot.risk import SymbolFilters
+from bot.text import chinese_argparse, chinese_log_levels, reason as zh_reason, side as zh_side
 from bot.trader import Trader
 
 
 def setup_logging(verbose: bool) -> None:
+    chinese_log_levels()
     Path("logs").mkdir(exist_ok=True)
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+        format="%(asctime)s【%(levelname)s】%(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout),
                   logging.FileHandler("logs/bot.log", encoding="utf-8")],
     )
@@ -36,30 +39,31 @@ def setup_logging(verbose: bool) -> None:
 def confirm_mainnet(cfg: Config) -> None:
     if not cfg.dry_run and not cfg.use_testnet:
         print("\n⚠️  你即將在【正式網】使用【真實資金】下單！")
-        print("⚠️  You are about to trade REAL MONEY on Binance mainnet.")
-        if input("輸入 YES 繼續 / type YES to continue: ").strip() != "YES":
-            sys.exit("Aborted.")
+        if input("確定要繼續請輸入「確定」：").strip() != "確定":
+            sys.exit("已取消。")
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Binance USDT-M futures auto-trading bot")
-    ap.add_argument("-v", "--verbose", action="store_true")
-    ap.add_argument("--env", default=".env", help="path to .env file")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    chinese_argparse()
+    ap = argparse.ArgumentParser(description="幣安 U 本位合約自動交易系統")
+    ap.add_argument("-v", "--verbose", action="store_true", help="顯示除錯訊息")
+    ap.add_argument("--env", default=".env", metavar="路徑", help=".env 設定檔路徑（預設 .env）")
+    sub = ap.add_subparsers(dest="cmd", required=True, metavar="指令")
 
-    r = sub.add_parser("run", help="start the trading loop")
-    r.add_argument("--poll", type=int, default=10, help="seconds between checks")
+    r = sub.add_parser("run", help="開始自動交易", description="開始自動交易")
+    r.add_argument("--poll", type=int, default=10, metavar="秒", help="每幾秒檢查一次（預設 10）")
 
-    b = sub.add_parser("backtest", help="backtest the strategy")
+    b = sub.add_parser("backtest", help="回測策略", description="回測策略")
     src = b.add_mutually_exclusive_group()
-    src.add_argument("--days", type=int, default=60, help="days of history to download")
-    src.add_argument("--csv", help="CSV file of klines")
-    src.add_argument("--synthetic", action="store_true", help="use generated data (offline)")
-    b.add_argument("--trades", action="store_true", help="print every trade")
-    b.add_argument("--strategy", choices=["macd_rsi", "ema_cross"], help="override STRATEGY")
+    src.add_argument("--days", type=int, default=60, metavar="天數", help="下載最近幾天的行情（預設 60）")
+    src.add_argument("--csv", metavar="檔案", help="使用 CSV 格式的 K 線檔案")
+    src.add_argument("--synthetic", action="store_true", help="使用模擬資料（不需網路）")
+    b.add_argument("--trades", action="store_true", help="列出每一筆交易")
+    b.add_argument("--strategy", choices=["macd_rsi", "ema_cross"],
+                   help="指定策略：macd_rsi（MACD + RSI）或 ema_cross（EMA 交叉）")
 
-    sub.add_parser("status", help="show balance / position")
-    sub.add_parser("close", help="cancel all orders and close the position")
+    sub.add_parser("status", help="查看餘額與持倉", description="查看餘額與持倉")
+    sub.add_parser("close", help="緊急：取消所有掛單並市價平倉", description="緊急：取消所有掛單並市價平倉")
 
     args = ap.parse_args()
     setup_logging(args.verbose)
@@ -76,14 +80,14 @@ def main() -> None:
     cfg = Config.from_env(args.env)
     client = BinanceFuturesClient(cfg.api_key, cfg.api_secret, cfg.base_url)
     if args.cmd in ("status", "close") and not (cfg.api_key and cfg.api_secret):
-        sys.exit("BINANCE_API_KEY / BINANCE_API_SECRET are required for this command (.env)")
+        sys.exit("這個指令需要在 .env 填入 BINANCE_API_KEY 和 BINANCE_API_SECRET")
 
     if args.cmd == "run":
         confirm_mainnet(cfg)
         try:
             Trader(cfg, client).run(args.poll)
         except KeyboardInterrupt:
-            log.info("Stopped by user. Open positions (if any) keep their exchange SL/TP orders.")
+            log.info("已手動停止。若還有持倉，交易所上的止損/止盈單仍然有效。")
 
     elif args.cmd == "backtest":
         logging.getLogger("bot.broker").setLevel(logging.WARNING)
@@ -97,29 +101,43 @@ def main() -> None:
             data_client = BinanceFuturesClient("", "", "https://fapi.binance.com")
             filters = SymbolFilters.from_exchange_info(data_client.symbol_info(cfg.symbol))
             candles = fetch_history(data_client, cfg.symbol, cfg.interval, args.days)
-        log.info("Backtesting %d candles with strategy=%s...", len(candles), cfg.strategy)
+        strat = {"macd_rsi": "MACD + RSI", "ema_cross": "EMA 交叉"}[cfg.strategy]
+        log.info("回測中：共 %d 根 K 線，策略=%s…", len(candles), strat)
         res = run_backtest(cfg, candles, filters)
         if args.trades:
             for t in res.trades:
-                print(f"{t.side:5} entry={t.entry:.2f} exit={t.exit:.2f} pnl={t.pnl:+.2f} ({t.reason})")
+                print(f"{zh_side(t.side)} 進場={t.entry:.2f} 出場={t.exit:.2f} 損益={t.pnl:+.2f}（{zh_reason(t.reason)}）")
         print(res.summary())
 
     elif args.cmd == "status":
         client.sync_time()
         bal = client.usdt_balance()
-        print(f"USDT wallet={bal['wallet']:.2f} available={bal['available']:.2f}")
+        print(f"USDT 錢包餘額={bal['wallet']:.2f} 可用餘額={bal['available']:.2f}")
         for p in client.position_risk(cfg.symbol):
             if float(p["positionAmt"]) != 0:
-                print(f"{p['symbol']} amt={p['positionAmt']} entry={p['entryPrice']} "
-                      f"uPnL={p['unRealizedProfit']} liq={p.get('liquidationPrice')}")
+                print(f"{p['symbol']} 持倉數量={p['positionAmt']} 開倉價={p['entryPrice']} "
+                      f"未實現損益={p['unRealizedProfit']} 強平價={p.get('liquidationPrice')}")
 
     elif args.cmd == "close":
         client.sync_time()
         from bot.broker import LiveBroker
         filters = SymbolFilters.from_exchange_info(client.symbol_info(cfg.symbol))
         LiveBroker(client, cfg.symbol, filters).close(0, "manual_close")
-        print("All orders cancelled and position closed.")
+        print("已取消所有掛單並平倉。")
 
 
 if __name__ == "__main__":
-    main()
+    import requests
+    from bot.client import BinanceAPIError
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit("\n已停止。")
+    except ValueError as e:
+        sys.exit(f"設定錯誤：{e}")
+    except BinanceAPIError as e:
+        sys.exit(f"幣安回應錯誤：{e}")
+    except requests.RequestException as e:
+        sys.exit(f"無法連線到幣安，請檢查網路（{type(e).__name__}）")
+    except RuntimeError as e:
+        sys.exit(f"錯誤：{e}")

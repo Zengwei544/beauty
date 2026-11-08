@@ -126,7 +126,7 @@ class MacdRsiStrategyTests(unittest.TestCase):
         self.assertEqual([i for i, _ in sigs], [41, 93, 143, 193])
         self.assertTrue(all(s.side == "LONG" for _, s in sigs))
         s = sigs[0][1]
-        self.assertIn("MACD crossed above", s.reason)
+        self.assertIn("MACD 金叉", s.reason)
         self.assertLess(s.stop_loss, s.entry)
         self.assertGreater(s.take_profit, s.entry)
 
