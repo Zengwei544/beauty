@@ -56,6 +56,7 @@ def main() -> None:
     src.add_argument("--csv", help="CSV file of klines")
     src.add_argument("--synthetic", action="store_true", help="use generated data (offline)")
     b.add_argument("--trades", action="store_true", help="print every trade")
+    b.add_argument("--strategy", choices=["macd_rsi", "ema_cross"], help="override STRATEGY")
 
     sub.add_parser("status", help="show balance / position")
     sub.add_parser("close", help="cancel all orders and close the position")
@@ -70,6 +71,8 @@ def main() -> None:
         load_dotenv(args.env)
         import os
         os.environ["DRY_RUN"] = "true"
+        if args.strategy:
+            os.environ["STRATEGY"] = args.strategy
     cfg = Config.from_env(args.env)
     client = BinanceFuturesClient(cfg.api_key, cfg.api_secret, cfg.base_url)
     if args.cmd in ("status", "close") and not (cfg.api_key and cfg.api_secret):
@@ -94,7 +97,7 @@ def main() -> None:
             data_client = BinanceFuturesClient("", "", "https://fapi.binance.com")
             filters = SymbolFilters.from_exchange_info(data_client.symbol_info(cfg.symbol))
             candles = fetch_history(data_client, cfg.symbol, cfg.interval, args.days)
-        log.info("Backtesting %d candles...", len(candles))
+        log.info("Backtesting %d candles with strategy=%s...", len(candles), cfg.strategy)
         res = run_backtest(cfg, candles, filters)
         if args.trades:
             for t in res.trades:

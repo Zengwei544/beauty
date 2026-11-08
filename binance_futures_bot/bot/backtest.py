@@ -10,7 +10,7 @@ from typing import List
 from .broker import PaperBroker, Trade
 from .config import Config
 from .risk import SymbolFilters, position_size
-from .strategy import Candle, EmaCrossStrategy
+from .strategy import Candle, make_strategy
 
 WINDOW = 300  # same number of candles the live bot sees
 
@@ -52,7 +52,7 @@ class BacktestResult:
 
 def run_backtest(cfg: Config, candles: List[Candle], filters: SymbolFilters | None = None) -> BacktestResult:
     filters = filters or SymbolFilters()
-    strategy = EmaCrossStrategy(cfg)
+    strategy = make_strategy(cfg)
     broker = PaperBroker(cfg.paper_balance, filters)
     peak, max_dd = cfg.paper_balance, 0.0
 

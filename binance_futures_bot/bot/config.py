@@ -48,8 +48,16 @@ class Config:
     leverage: int = 5
     margin_type: str = "ISOLATED"
 
+    strategy: str = "macd_rsi"       # "macd_rsi" or "ema_cross"
     ema_fast: int = 20
     ema_slow: int = 50
+    macd_fast: int = 12
+    macd_slow: int = 26
+    macd_signal: int = 9
+    rsi_long_min: float = 50.0       # long only if RSI in [min, max]
+    rsi_long_max: float = 70.0
+    rsi_short_min: float = 30.0      # short only if RSI in [min, max]
+    rsi_short_max: float = 50.0
     rsi_period: int = 14
     atr_period: int = 14
     sl_atr_mult: float = 1.5
@@ -80,6 +88,14 @@ class Config:
             interval=os.getenv("INTERVAL", "15m"),
             leverage=_int("LEVERAGE", 5),
             margin_type=os.getenv("MARGIN_TYPE", "ISOLATED").upper(),
+            strategy=os.getenv("STRATEGY", "macd_rsi").strip().lower(),
+            macd_fast=_int("MACD_FAST", 12),
+            macd_slow=_int("MACD_SLOW", 26),
+            macd_signal=_int("MACD_SIGNAL", 9),
+            rsi_long_min=_float("RSI_LONG_MIN", 50.0),
+            rsi_long_max=_float("RSI_LONG_MAX", 70.0),
+            rsi_short_min=_float("RSI_SHORT_MIN", 30.0),
+            rsi_short_max=_float("RSI_SHORT_MAX", 50.0),
             ema_fast=_int("EMA_FAST", 20),
             ema_slow=_int("EMA_SLOW", 50),
             rsi_period=_int("RSI_PERIOD", 14),
@@ -95,6 +111,13 @@ class Config:
         return cfg
 
     def validate(self) -> None:
+        if self.strategy not in ("macd_rsi", "ema_cross"):
+            raise ValueError("STRATEGY must be macd_rsi or ema_cross")
+        if self.macd_fast >= self.macd_slow or self.macd_signal <= 0:
+            raise ValueError("MACD_FAST must be smaller than MACD_SLOW, MACD_SIGNAL > 0")
+        if not (0 <= self.rsi_long_min < self.rsi_long_max <= 100
+                and 0 <= self.rsi_short_min < self.rsi_short_max <= 100):
+            raise ValueError("RSI_*_MIN must be < RSI_*_MAX, both within 0-100")
         if self.ema_fast >= self.ema_slow:
             raise ValueError("EMA_FAST must be smaller than EMA_SLOW")
         if not 1 <= self.leverage <= 125:

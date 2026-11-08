@@ -9,7 +9,7 @@ from .broker import LiveBroker, PaperBroker
 from .client import BinanceFuturesClient
 from .config import Config
 from .risk import DailyLossGuard, SymbolFilters, position_size
-from .strategy import Candle, EmaCrossStrategy
+from .strategy import Candle, make_strategy
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class Trader:
     def __init__(self, cfg: Config, client: Optional[BinanceFuturesClient] = None):
         self.cfg = cfg
         self.client = client or BinanceFuturesClient(cfg.api_key, cfg.api_secret, cfg.base_url)
-        self.strategy = EmaCrossStrategy(cfg)
+        self.strategy = make_strategy(cfg)
         self.guard = DailyLossGuard(cfg.max_daily_loss_pct)
         self.broker: Union[PaperBroker, LiveBroker, None] = None
         self.filters = SymbolFilters()
@@ -35,8 +35,8 @@ class Trader:
     def setup(self) -> None:
         cfg = self.cfg
         mode = "TESTNET" if cfg.use_testnet else "MAINNET (REAL MONEY)"
-        log.info("Starting bot: %s %s | %s | %s | leverage=%dx %s",
-                 cfg.symbol, cfg.interval, mode, "DRY_RUN" if cfg.dry_run else "LIVE ORDERS",
+        log.info("Starting bot: %s %s | strategy=%s | %s | %s | leverage=%dx %s",
+                 cfg.symbol, cfg.interval, cfg.strategy, mode, "DRY_RUN" if cfg.dry_run else "LIVE ORDERS",
                  cfg.leverage, cfg.margin_type)
         self.client.sync_time()
         self.filters = SymbolFilters.from_exchange_info(self.client.symbol_info(cfg.symbol))

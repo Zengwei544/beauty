@@ -5,9 +5,9 @@ from bot.backtest import run_backtest, synthetic_candles
 from bot.broker import LiveBroker, PaperBroker
 from bot.client import BinanceAPIError, ERR_USE_ALGO_ORDER, BinanceFuturesClient
 from bot.config import Config
-from bot.indicators import atr, ema, rsi
+from bot.indicators import atr, ema, macd, rsi
 from bot.risk import DailyLossGuard, SymbolFilters, position_size
-from bot.strategy import Candle, EmaCrossStrategy, Signal
+from bot.strategy import Candle, EmaCrossStrategy, MacdRsiStrategy, Signal, make_strategy
 from bot.trader import Trader
 
 
@@ -39,6 +39,19 @@ class IndicatorTests(unittest.TestCase):
         n = 40
         out = atr([11.0] * n, [9.0] * n, [10.0] * n, 14)
         self.assertAlmostEqual(out[-1], 2.0)
+
+
+    def test_macd_matches_manual_ema(self):
+        closes = [100 + (i % 7) - i * 0.3 for i in range(60)]
+        line, sig, hist = macd(closes, 12, 26, 9)
+        ef, es = ema(closes, 12), ema(closes, 26)
+        self.assertIsNone(line[24])
+        self.assertAlmostEqual(line[-1], ef[-1] - es[-1])
+        valid = [v for v in line if v is not None]
+        self.assertAlmostEqual(sig[-1], ema(valid, 9)[-1])
+        self.assertAlmostEqual(hist[-1], line[-1] - sig[-1])
+        self.assertIsNone(sig[25 + 7])           # signal needs 9 MACD values
+        self.assertIsNotNone(sig[25 + 8])
 
 
 class RiskTests(unittest.TestCase):
@@ -92,6 +105,52 @@ class StrategyTests(unittest.TestCase):
         self.assertIsNone(EmaCrossStrategy(cfg()).evaluate(make_candles([1.0] * 10)))
 
 
+class MacdRsiStrategyTests(unittest.TestCase):
+    @staticmethod
+    def wave(drift, n=200):
+        import math
+        return [100 + drift * i + 4 * math.sin(i / 8) for i in range(n)]
+
+    def signals(self, closes, **kw):
+        strat = MacdRsiStrategy(cfg(**kw))
+        out = []
+        for n in range(strat.warmup, len(closes) + 1):
+            s = strat.evaluate(make_candles(closes[:n]))
+            if s:
+                out.append((n - 1, s))
+        return out
+
+    def test_uptrend_longs_only(self):
+        # MACD crosses up with RSI ~53-60 (allowed); crosses down with RSI ~90 (blocked)
+        sigs = self.signals(self.wave(0.15))
+        self.assertEqual([i for i, _ in sigs], [41, 93, 143, 193])
+        self.assertTrue(all(s.side == "LONG" for _, s in sigs))
+        s = sigs[0][1]
+        self.assertIn("MACD crossed above", s.reason)
+        self.assertLess(s.stop_loss, s.entry)
+        self.assertGreater(s.take_profit, s.entry)
+
+    def test_downtrend_shorts_only(self):
+        # crosses down with RSI ~40 (allowed); crosses up with RSI ~8 (blocked)
+        sigs = self.signals(self.wave(-0.15))
+        self.assertEqual([i for i, _ in sigs], [68, 118, 168])
+        self.assertTrue(all(s.side == "SHORT" for _, s in sigs))
+        self.assertGreater(sigs[0][1].stop_loss, sigs[0][1].entry)
+
+    def test_rsi_filter_blocks_extremes(self):
+        # pure sine: crosses happen at RSI ~6 / ~94 -> all filtered by default
+        self.assertEqual(self.signals(self.wave(0, 160)), [])
+        wide = self.signals(self.wave(0, 160), rsi_long_min=0, rsi_long_max=100,
+                            rsi_short_min=0, rsi_short_max=100)
+        self.assertEqual([s.side for _, s in wide], ["LONG", "SHORT", "LONG", "SHORT", "LONG"])
+
+    def test_factory_and_default(self):
+        self.assertIsInstance(make_strategy(cfg()), MacdRsiStrategy)
+        self.assertIsInstance(make_strategy(cfg(strategy="ema_cross")), EmaCrossStrategy)
+        with self.assertRaises(ValueError):
+            cfg(strategy="nope")
+
+
 class PaperBrokerTests(unittest.TestCase):
     def test_stop_loss_hit(self):
         b = PaperBroker(1000, fee=0)
@@ -118,10 +177,12 @@ class PaperBrokerTests(unittest.TestCase):
 
 class BacktestTests(unittest.TestCase):
     def test_backtest_runs_and_is_consistent(self):
-        res = run_backtest(cfg(paper_balance=10000), synthetic_candles(2000))
-        self.assertGreater(len(res.trades), 5)
-        self.assertAlmostEqual(res.end_balance, 10000 + sum(t.pnl for t in res.trades), places=6)
-        self.assertGreaterEqual(res.max_drawdown_pct, 0)
+        for name in ("macd_rsi", "ema_cross"):
+            with self.subTest(strategy=name):
+                res = run_backtest(cfg(paper_balance=10000, strategy=name), synthetic_candles(2000))
+                self.assertGreater(len(res.trades), 5)
+                self.assertAlmostEqual(res.end_balance, 10000 + sum(t.pnl for t in res.trades), places=6)
+                self.assertGreaterEqual(res.max_drawdown_pct, 0)
 
 
 # ---------------------------------------------------------------- fake exchange

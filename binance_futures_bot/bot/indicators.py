@@ -66,3 +66,22 @@ def atr(highs: Sequence[float], lows: Sequence[float], closes: Sequence[float], 
         prev = (prev * (period - 1) + trs[i]) / period
         out[i] = prev
     return out
+
+
+def macd(closes: Sequence[float], fast: int = 12, slow: int = 26, signal: int = 9):
+    """MACD line, signal line and histogram (each a list aligned with `closes`)."""
+    n = len(closes)
+    ef, es = ema(closes, fast), ema(closes, slow)
+    line: Series = [None if ef[i] is None or es[i] is None else ef[i] - es[i] for i in range(n)]
+    sig: Series = [None] * n
+    hist: Series = [None] * n
+    start = next((i for i, v in enumerate(line) if v is not None), None)
+    if start is None:
+        return line, sig, hist
+    sig_part = ema([v for v in line[start:]], signal)  # type: ignore[misc]
+    for j, v in enumerate(sig_part):
+        i = start + j
+        sig[i] = v
+        if v is not None:
+            hist[i] = line[i] - v
+    return line, sig, hist

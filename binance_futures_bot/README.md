@@ -9,16 +9,23 @@
 
 | 模組 | 說明 |
 |---|---|
-| `bot/strategy.py` | EMA 交叉趨勢策略 + RSI 過濾，ATR 計算止損止盈 |
+| `bot/strategy.py` | **MACD + RSI**（預設）與 EMA 交叉兩種策略，ATR 計算止損止盈 |
 | `bot/risk.py` | 依「每筆最多虧損帳戶 X%」計算下單數量；依交易所規則取整；單日虧損上限 |
 | `bot/broker.py` | `PaperBroker`（本機模擬）與 `LiveBroker`（真實下單，自動掛止損/止盈單） |
 | `bot/client.py` | 幣安合約 REST API（HMAC 簽名、時間同步、限流重試、條件單自動切換 Algo Order 介面） |
 | `bot/trader.py` | 主迴圈：只在 K 線收盤後判斷，避免假訊號 |
 | `bot/backtest.py` | 回測（下一根開盤成交、含手續費、計算勝率/回撤/獲利因子） |
 
-### 策略規則
-- **做多**：快線 EMA(20) 上穿慢線 EMA(50) 且 RSI > 50
-- **做空**：快線 EMA(20) 下穿慢線 EMA(50) 且 RSI < 50
+### 策略規則：MACD + RSI（預設，`STRATEGY=macd_rsi`）
+- **做多**：MACD(12,26,9) 快線**上穿**訊號線（金叉），且 **50 < RSI(14) < 70**
+  （動能轉強、但還沒超買，避免追高）
+- **做空**：MACD 快線**下穿**訊號線（死叉），且 **30 < RSI(14) < 50**
+  （動能轉弱、但還沒超賣，避免追空）
+- RSI 區間可在 `.env` 用 `RSI_LONG_MIN/MAX`、`RSI_SHORT_MIN/MAX` 調整
+
+另有 EMA 交叉策略（`STRATEGY=ema_cross`）：EMA20 上/下穿 EMA50 且 RSI 在 50 之上/下。
+
+兩種策略共通：
 - **止損** = 進場價 ∓ 1.5 × ATR；**止盈** = 進場價 ± 3 × ATR（風報比 1:2）
 - 出現反向訊號時平倉並反手
 - 止損/止盈單直接掛在交易所（`closePosition`，用標記價格觸發），程式當機也有保護
@@ -38,6 +45,7 @@ cp .env.example .env      # 然後編輯 .env
 python main.py backtest --days 90           # 下載最近 90 天真實 K 線回測
 python main.py backtest --days 90 --trades  # 列出每筆交易
 python main.py backtest --synthetic         # 離線用模擬資料測試
+python main.py backtest --days 90 --strategy ema_cross   # 和 EMA 策略比較
 ```
 
 **2. 紙上交易**：`.env` 設 `DRY_RUN=true`，用真實行情、模擬下單
@@ -68,7 +76,7 @@ python main.py close     # 緊急：取消所有掛單並市價平倉
 ## 調整參數
 
 全部在 `.env` 中：`SYMBOL`、`INTERVAL`（如 `5m`、`15m`、`1h`、`4h`）、`LEVERAGE`、
-`EMA_FAST/EMA_SLOW`、`SL_ATR_MULT/TP_ATR_MULT`、`RISK_PER_TRADE_PCT`、`MAX_DAILY_LOSS_PCT` 等。
+`STRATEGY`、`MACD_FAST/MACD_SLOW/MACD_SIGNAL`、`RSI_LONG_MIN/MAX`、`RSI_SHORT_MIN/MAX`、`SL_ATR_MULT/TP_ATR_MULT`、`RISK_PER_TRADE_PCT`、`MAX_DAILY_LOSS_PCT` 等。
 改參數後先回測再上線。
 
 想換策略：在 `bot/strategy.py` 寫一個有 `evaluate(candles) -> Signal | None` 方法的類別即可。
